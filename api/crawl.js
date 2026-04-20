@@ -10,26 +10,21 @@ export default async function handler(req, res) {
 
   const mcpServers = []
   if (process.env.SLACK_MCP_TOKEN) mcpServers.push({ type: 'url', url: 'https://mcp.slack.com/mcp', name: 'slack', authorization_token: process.env.SLACK_MCP_TOKEN })
-  if (process.env.GMAIL_MCP_TOKEN) mcpServers.push({ type: 'url', url: 'https://gmailmcp.googleapis.com/mcp/v1', name: 'gmail', authorization_token: process.env.GMAIL_MCP_TOKEN })
   if (process.env.CLICKUP_MCP_TOKEN) mcpServers.push({ type: 'url', url: 'https://mcp.clickup.com/mcp', name: 'clickup', authorization_token: process.env.CLICKUP_MCP_TOKEN })
 
   const headers = {
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
-  }
-
-  if (mcpServers.length > 0) {
-    headers['anthropic-beta'] = 'mcp-client-2025-04-04'
+    'anthropic-beta': 'mcp-client-2025-04-04',
   }
 
   const body = {
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,
     messages: [{ role: 'user', content: CRAWL_PROMPT }],
+    mcp_servers: mcpServers,
   }
-
-  if (mcpServers.length > 0) body.mcp_servers = mcpServers
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -45,13 +40,23 @@ export default async function handler(req, res) {
     }
 
     const textBlock = data.content?.find(b => b.type === 'text')
-    if (!textBlock) return res.status(502).json({ error: 'No text response from Claude' })
+    if (!textBlock) {
+      console.error('Full response:', JSON.stringify(data))
+      return res.status(502).json({ error: 'No text response', raw: JSON.stringify(data).slice(0, 1000) })
+    }
+
+    console.log('Claude raw response:', textBlock.text.slice(0, 500))
 
     let tasks
     try {
-      tasks = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim())
+      const clean = textBlock.text.replace(/```json|```/g, '').trim()
+      tasks = JSON.parse(clean)
     } catch {
-      return res.status(502).json({ error: 'Invalid JSON from Claude', raw: textBlock.text.slice(0, 500) })
+      console.error('Parse failed, raw text:', textBlock.text.slice(0, 500))
+      return res.status(502).json({ 
+        error: 'Invalid JSON from Claude', 
+        raw: textBlock.text.slice(0, 500) 
+      })
     }
 
     return res.status(200).json({ tasks, crawledAt: new Date().toISOString() })
