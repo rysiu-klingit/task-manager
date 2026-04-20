@@ -3,7 +3,8 @@ export const config = { maxDuration: 120 }
 async function getSlackData(token) {
   try {
     const searchRes = await fetch(
-      'https://slack.com/api/search.messages?query=to%3Ame&count=50&sort=timestamp&sort_dir=desc',
+      'https://slack.com/api/search.messages?query=Rysiu&count=50&sort=timestamp&sort_dir=desc',
+
       { headers: { Authorization: `Bearer ${token}` } }
     )
     const search = await searchRes.json()
