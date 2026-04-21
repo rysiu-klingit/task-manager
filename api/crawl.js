@@ -147,7 +147,9 @@ Each item MUST have:
   "priority": "p1" or "p2" or "p3" or "p4",
   "who": "person name or null",
   "receivedAt": "ISO 8601 datetime string — extract from email Date header, Slack ts (unix timestamp * 1000), or ClickUp date_created. MUST be a real date from the data.",
-  "link": "url or null"
+  "link": "url or null",
+  "assignee": "the Klingit developer most likely responsible — pick from: Rysiu, Dmytro, Hans, Elias, Huy. Rysiu = PM tasks, client comms, estimates, coordination. Dmytro = dev/code tasks, bug fixes, WordPress, performance. Hans or Elias = design/UX tasks. Huy = design support. If unclear, use Rysiu.",
+  "client": "the client company this relates to — pick from: Geomatikk, Nabo, LanoPro, Ekovilla, Verisec, Optifit, Xensam, Odevo, 1825, Schibsted, Arvid Nordquist, Pinerock, Gladsheim, Ozzlights, Migränhjälpen, or null if internal/unclear."
 }
 
 Priority guide:

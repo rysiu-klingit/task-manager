@@ -62,23 +62,14 @@ function fmtFull(iso) {
   } catch { return null }
 }
 
-function NavItem({ label, active, onClick, icon, count }) {
+function NavItem({ label, active, onClick, count }) {
   return (
     <div onClick={onClick} style={{
-      display: 'flex', alignItems: 'center', gap: 12, padding: '9px 14px',
+      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
       borderRadius: 10, cursor: 'pointer', marginBottom: 2,
       background: active ? B.cream : 'transparent',
       transition: 'background .15s',
     }}>
-      <div style={{
-        width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: active ? B.black : B.white,
-        boxShadow: active ? '0 4px 12px rgba(0,0,0,.2)' : '0 2px 6px rgba(0,0,0,.08)',
-        flexShrink: 0, fontSize: 13,
-        filter: active ? 'none' : 'none',
-      }}>
-        <span style={{ filter: active ? 'invert(1)' : 'none' }}>{icon}</span>
-      </div>
       <span style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? B.black : B.textMuted, flex: 1 }}>{label}</span>
       {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: active ? B.black : B.pageBg, color: active ? B.cream : B.textMuted }}>{count}</span>}
     </div>
@@ -355,14 +346,14 @@ export default function App() {
 
         <div style={{ padding: '14px 12px', flex: 1 }}>
           {/* Main nav */}
-          <NavItem label="All Tasks" active={priFilter === 'all' && srcFilter === 'all' && !showArchive} icon="📋" count={srcCounts.all}
+          <NavItem label="All Tasks" active={priFilter === 'all' && srcFilter === 'all' && !showArchive} count={srcCounts.all}
             onClick={() => { setPriFilter('all'); setSrcFilter('all'); setShowArchive(false) }} />
 
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: B.textLight, padding: '12px 14px 6px' }}>Priority</div>
           {PRIORITIES.map(p => {
             const cfg = PRIORITY[p]
             return (
-              <NavItem key={p} label={cfg.label} active={priFilter === p} icon={p === 'p1' ? '🔴' : p === 'p2' ? '🟠' : p === 'p3' ? '🔵' : '⚪'} count={priCounts[p]}
+              <NavItem key={p} label={cfg.label} active={priFilter === p} count={priCounts[p]}
                 onClick={() => { setPriFilter(priFilter === p ? 'all' : p); setShowArchive(false) }} />
             )
           })}
@@ -371,14 +362,13 @@ export default function App() {
           {SRCS.map(s => (
             <NavItem key={s} label={s === 'all' ? 'All sources' : s.charAt(0).toUpperCase() + s.slice(1)}
               active={srcFilter === s && priFilter === 'all'}
-              icon={s === 'all' ? '🌐' : s === 'slack' ? '💬' : s === 'gmail' ? '✉️' : '📌'}
               count={srcCounts[s]}
               onClick={() => { setSrcFilter(s); setPriFilter('all'); setShowArchive(false) }}
             />
           ))}
 
           <div style={{ height: 1, background: B.sidebarBorder, margin: '12px 4px' }} />
-          <NavItem label="Archive" active={showArchive} icon="📦" count={archived.length} onClick={() => setShowArchive(s => !s)} />
+          <NavItem label="Archive" active={showArchive} count={archived.length} onClick={() => setShowArchive(s => !s)} />
         </div>
 
         {/* Crawl card */}
