@@ -62,7 +62,7 @@ function fmtFull(iso) {
   } catch { return null }
 }
 
-function NavItem({ label, active, onClick, count }) {
+function NavItem({ label, active, onClick, count, dot }) {
   return (
     <div onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
@@ -70,6 +70,7 @@ function NavItem({ label, active, onClick, count }) {
       background: active ? B.cream : 'transparent',
       transition: 'background .15s',
     }}>
+      {dot && <div style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
       <span style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? B.black : B.textMuted, flex: 1 }}>{label}</span>
       {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: active ? B.black : B.pageBg, color: active ? B.cream : B.textMuted }}>{count}</span>}
     </div>
@@ -185,9 +186,6 @@ function TaskRow({ task, onToggle, onArchive, onUpdate }) {
             {ts && (
               <span title={tsFull || ''} style={{ fontSize: 11, color: B.textLight, marginLeft: 2 }}>· {ts}</span>
             )}
-            {task.link && (
-              <a href={task.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: '#3182ce', marginLeft: 2, fontWeight: 600 }}>↗</a>
-            )}
           </div>
 
           {/* Title */}
@@ -197,6 +195,22 @@ function TaskRow({ task, onToggle, onArchive, onUpdate }) {
             textDecoration: task.checked ? 'line-through' : 'none',
             marginBottom: 6,
           }}>{title}</div>
+
+          {/* Link row */}
+          {task.link && (
+            <div style={{ marginBottom: 6 }}>
+              <a href={task.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{
+                fontSize: 11, color: '#3182ce', fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '2px 8px', borderRadius: 6,
+                background: '#ebf8ff', border: '1px solid #bee3f8',
+                textDecoration: 'none',
+              }}>
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M7 1h4v4M11 1L5 7M4 3H2a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V8" stroke="#3182ce" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                {task.source === 'slack' ? 'Open in Slack' : task.source === 'gmail' ? 'Open in Gmail' : 'Open in ClickUp'}
+              </a>
+            </div>
+          )}
 
           {/* Meta row */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -354,6 +368,7 @@ export default function App() {
             const cfg = PRIORITY[p]
             return (
               <NavItem key={p} label={cfg.label} active={priFilter === p} count={priCounts[p]}
+                dot={cfg.color}
                 onClick={() => { setPriFilter(priFilter === p ? 'all' : p); setShowArchive(false) }} />
             )
           })}
