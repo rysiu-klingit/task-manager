@@ -2,42 +2,54 @@ export const config = { maxDuration: 120 }
 
 async function getSlackData(token) {
   try {
-    const searchRes = await fetch(
-      'https://slack.com/api/search.messages?query=to%3Ame&count=50&sort=timestamp&sort_dir=desc',
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
-    const search = await searchRes.json()
-    const messages = search?.messages?.matches || []
+    const results = []
 
-    if (!messages.length) {
-      const convsRes = await fetch(
-        'https://slack.com/api/conversations.list?types=public_channel,private_channel,im,mpim&limit=20',
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const convs = await convsRes.json()
-      const results = []
-      for (const ch of (convs.channels || []).slice(0, 10)) {
-        try {
-          const histRes = await fetch(
-            `https://slack.com/api/conversations.history?channel=${ch.id}&limit=15`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-          const hist = await histRes.json()
-          if (hist.ok) results.push(...(hist.messages || []).map(m => ({
-            channel: ch.name || ch.id, text: m.text, ts: m.ts
+    // Search messages mentioning Rysiu or directed at him
+    for (const q of ['to:me', 'Rysiu', 'mentioned:me']) {
+      try {
+        const r = await fetch(
+          `https://slack.com/api/search.messages?query=${encodeURIComponent(q)}&count=50&sort=timestamp&sort_dir=desc`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        const d = await r.json()
+        if (d.ok && d.messages?.matches) {
+          results.push(...d.messages.matches.map(m => ({
+            channel: m.channel?.name, text: m.text, ts: m.ts,
+            username: m.username, permalink: m.permalink,
           })))
-        } catch {}
-      }
-      return results.slice(0, 50)
+        }
+      } catch {}
     }
 
-    return messages.slice(0, 50).map(m => ({
-      channel: m.channel?.name,
-      text: m.text,
-      ts: m.ts,
-      username: m.username,
-      permalink: m.permalink,
-    }))
+    // Pull recent history from all channels
+    const convsR = await fetch(
+      'https://slack.com/api/conversations.list?types=public_channel,private_channel,im,mpim&limit=50&exclude_archived=true',
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const convs = await convsR.json()
+    const cutoff = (Date.now()/1000 - 14*86400).toFixed(0)
+    for (const ch of (convs.channels || []).slice(0, 20)) {
+      try {
+        const h = await fetch(
+          `https://slack.com/api/conversations.history?channel=${ch.id}&limit=20&oldest=${cutoff}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        const hd = await h.json()
+        if (hd.ok) {
+          results.push(...(hd.messages || []).map(m => ({
+            channel: ch.name || ch.id, text: m.text, ts: m.ts,
+          })))
+        }
+      } catch {}
+    }
+
+    // Deduplicate
+    const seen = new Set()
+    return results.filter(m => {
+      const key = (m.channel || '') + (m.text || '').slice(0, 60)
+      if (seen.has(key)) return false
+      seen.add(key); return true
+    }).slice(0, 100)
   } catch (err) {
     return `Slack error: ${err.message}`
   }
@@ -45,7 +57,6 @@ async function getSlackData(token) {
 
 async function getGmailData(refreshToken, clientId, clientSecret) {
   try {
-    // Exchange refresh token for access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -58,39 +69,29 @@ async function getGmailData(refreshToken, clientId, clientSecret) {
     })
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) return `Gmail token error: ${JSON.stringify(tokenData)}`
+    const access = tokenData.access_token
 
-    const accessToken = tokenData.access_token
-
-    // Search for unread emails in inbox
     const listRes = await fetch(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+label:inbox+newer_than:14d&maxResults=30',
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+label:inbox+newer_than:14d&maxResults=50',
+      { headers: { Authorization: `Bearer ${access}` } }
     )
     const list = await listRes.json()
     const messages = list.messages || []
 
-    // Fetch details for each message
     const details = await Promise.all(
-      messages.slice(0, 20).map(async m => {
+      messages.slice(0, 40).map(async m => {
         try {
-          const msgRes = await fetch(
+          const r = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
+            { headers: { Authorization: `Bearer ${access}` } }
           )
-          const msg = await msgRes.json()
-          const headers = msg.payload?.headers || []
-          const get = name => headers.find(h => h.name === name)?.value || ''
-          return {
-            id: m.id,
-            subject: get('Subject'),
-            from: get('From'),
-            date: get('Date'),
-            snippet: msg.snippet,
-          }
+          const msg = await r.json()
+          const h = msg.payload?.headers || []
+          const get = n => h.find(x => x.name === n)?.value || ''
+          return { id: m.id, subject: get('Subject'), from: get('From'), date: get('Date'), snippet: msg.snippet }
         } catch { return null }
       })
     )
-
     return details.filter(Boolean)
   } catch (err) {
     return `Gmail error: ${err.message}`
@@ -104,23 +105,17 @@ async function getClickUpTasks(token) {
     })
     const teams = await teamsRes.json()
     if (!teams.teams?.length) return 'No ClickUp teams found'
-
     const teamId = teams.teams[0].id
+
     const tasksRes = await fetch(
-      `https://api.clickup.com/api/v2/team/${teamId}/task?assignee=me&include_closed=false&subtasks=true`,
+      `https://api.clickup.com/api/v2/team/${teamId}/task?assignee=me&include_closed=false&subtasks=true&page=0`,
       { headers: { Authorization: token } }
     )
     const tasks = await tasksRes.json()
-
-    return (tasks.tasks || []).slice(0, 50).map(t => ({
-      id: t.id,
-      name: t.name,
-      status: t.status?.status,
-      priority: t.priority?.priority,
-      due_date: t.due_date,
-      list: t.list?.name,
-      folder: t.folder?.name,
-      url: t.url,
+    return (tasks.tasks || []).map(t => ({
+      id: t.id, name: t.name, status: t.status?.status,
+      priority: t.priority?.priority, due_date: t.due_date,
+      list: t.list?.name, folder: t.folder?.name, url: t.url,
       overdue: t.due_date && parseInt(t.due_date) < Date.now(),
     }))
   } catch (err) {
@@ -130,7 +125,6 @@ async function getClickUpTasks(token) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' })
 
@@ -142,25 +136,31 @@ export default async function handler(req, res) {
     process.env.CLICKUP_MCP_TOKEN ? getClickUpTasks(process.env.CLICKUP_MCP_TOKEN) : 'No ClickUp token',
   ])
 
-  console.log('Slack:', Array.isArray(slackData) ? `${slackData.length} messages` : slackData)
-  console.log('Gmail:', Array.isArray(gmailData) ? `${gmailData.length} emails` : gmailData)
-  console.log('ClickUp:', Array.isArray(clickupData) ? `${clickupData.length} tasks` : clickupData)
+  console.log('Slack items:', Array.isArray(slackData) ? slackData.length : slackData)
+  console.log('Gmail items:', Array.isArray(gmailData) ? gmailData.length : gmailData)
+  console.log('ClickUp items:', Array.isArray(clickupData) ? clickupData.length : clickupData)
 
-  const prompt = `You are a personal task assistant for Rysiu at Klingit, a creative web agency in Stockholm. Extract every actionable item from the data below. Return ONLY a valid JSON array, no markdown, no explanation.
+  const prompt = `You are a task extraction assistant for Rysiu Moscicki, Project Manager at Klingit (a web/creative agency).
 
-SLACK MESSAGES (recent):
-${JSON.stringify(slackData).slice(0, 6000)}
+Your job is to extract EVERY SINGLE actionable item — be COMPREHENSIVE, do NOT filter aggressively.
 
-GMAIL UNREAD EMAILS:
-${JSON.stringify(gmailData).slice(0, 4000)}
+Extract an item for EACH of:
+- Every Slack message where someone is waiting for Rysiu's reply, decision, review, or approval
+- Every Slack message where Rysiu committed to something or was asked to do something
+- Every unread Gmail email from a client or colleague that needs a response or action
+- Every ClickUp task assigned to Rysiu that is not closed/complete — list EACH task separately
+- Any overdue items
 
-CLICKUP TASKS (assigned to Rysiu):
-${JSON.stringify(clickupData).slice(0, 3000)}
+ONLY skip: pure automated bot messages with zero human action needed, product marketing newsletters from tools like ClickUp/Loom/Slack, calendar accept/decline auto-responses.
 
-Each item must have:
+INCLUDE everything else. More items is ALWAYS better than fewer. If in doubt, include it.
+
+Return ONLY a raw JSON array. No markdown, no explanation, no code fences.
+
+Each item:
 {
-  "id": "unique stable string e.g. slack-linn-nav or gmail-geomatikk-invoice",
-  "title": "plain English, what needs doing, max 120 chars",
+  "id": "unique-stable-string",
+  "title": "clear action needed in plain English, max 120 chars",
   "detail": "who is waiting and context, max 200 chars",
   "source": "slack" or "gmail" or "clickup",
   "category": "fire" or "email" or "client" or "clickup" or "internal",
@@ -170,16 +170,34 @@ Each item must have:
   "link": "url or null"
 }
 
-Ignore: bot messages, newsletters, automated notifications, marketing emails, calendar accepts/declines, tool emails (ClickUp/Loom/Slack marketing).
-Sort: fire first, email, client, clickup, internal.`
+Categories:
+- fire = urgent, blocking a client, escalating, needs action TODAY
+- email = needs an email reply
+- client = client coordination, estimates, sign-offs, project updates
+- clickup = open ClickUp task (use this for ALL clickup tasks)
+- internal = internal Klingit process, finance, scheduling, team
+
+Sort: fire first, then email, client, clickup, internal.
+
+## SLACK (${Array.isArray(slackData) ? slackData.length : 0} messages):
+${JSON.stringify(slackData).slice(0, 10000)}
+
+## GMAIL (${Array.isArray(gmailData) ? gmailData.length : 0} emails):
+${JSON.stringify(gmailData).slice(0, 6000)}
+
+## CLICKUP (${Array.isArray(clickupData) ? clickupData.length : 0} tasks):
+${JSON.stringify(clickupData).slice(0, 4000)}`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-
     const data = await response.json()
     if (!response.ok) return res.status(502).json({ error: 'Anthropic API error', detail: data?.error?.message })
 
