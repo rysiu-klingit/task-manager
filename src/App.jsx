@@ -109,6 +109,50 @@ function StatusPill({ status, onChange }) {
   )
 }
 
+function PriorityPill({ priority, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  const cfg = PRIORITY[priority] || PRIORITY.p3
+
+  return (
+    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
+      <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} style={{
+        fontSize: 10, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
+        border: `1px solid ${cfg.border}`, background: cfg.bg, color: cfg.color,
+        cursor: 'pointer', letterSpacing: '.04em', textTransform: 'uppercase',
+        display: 'flex', alignItems: 'center', gap: 4,
+      }}>
+        {cfg.short}
+        <svg width="8" height="8" viewBox="0 0 10 10"><polyline points="2,3 5,7 8,3" fill="none" stroke={cfg.color} strokeWidth="1.5" strokeLinecap="round"/></svg>
+      </button>
+      {open && (
+        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, background:B.white, border:`1px solid ${B.border}`, borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', zIndex:50, minWidth:150, overflow:'hidden' }}>
+          {PRIORITIES.filter(p => p !== priority).map(p => {
+            const c = PRIORITY[p]
+            return (
+              <div key={p} onClick={e => { e.stopPropagation(); onChange(p); setOpen(false) }} style={{
+                padding: '9px 14px', fontSize: 12, fontWeight: 600, color: c.color,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                background: B.white, transition: 'background .1s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = c.bg}
+              onMouseLeave={e => e.currentTarget.style.background = B.white}>
+                <div style={{ width:8, height:8, borderRadius:'50%', background:c.color }} />
+                {c.label}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EditPanel({ task, onSave, onClose }) {
   const [title, setTitle] = useState(task.customTitle || task.title)
   const [assignee, setAssignee] = useState(task.assignee || '')
@@ -197,9 +241,12 @@ function TaskRow({ task, onSetStatus, onArchive, onUpdate }) {
           </div>
         </div>
 
-        {/* Right side — status pill + actions */}
+        {/* Right side — priority pill + status pill + actions */}
         <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6, flexShrink:0 }}>
-          <StatusPill status={task.status||'open'} onChange={s => onSetStatus(task.id, s)} />
+          <div style={{ display:'flex', gap:5 }}>
+            <PriorityPill priority={task.priority||'p3'} onChange={p => onUpdate(task.id, { priority: p })} />
+            <StatusPill status={task.status||'open'} onChange={s => onSetStatus(task.id, s)} />
+          </div>
           <div style={{ display:'flex', gap:4, opacity: hov ? 1 : 0, transition:'opacity .15s' }}>
             <button onClick={() => setEditing(e => !e)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background: editing ? B.cream : B.white, cursor:'pointer', color:B.textMuted }}>✏</button>
             <button onClick={() => onArchive(task.id)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background:B.white, cursor:'pointer', color:B.textMuted }}>↓</button>
