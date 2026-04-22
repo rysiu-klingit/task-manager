@@ -255,8 +255,15 @@ export default function App() {
     setLoading(true); setError(null)
     try {
       const res = await fetch('/api/crawl', { method:'POST' })
-      const data = await res.json()
+      const text = await res.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch {
+        throw new Error(`Server error: ${text.slice(0, 120)}`)
+      }
       if (!res.ok) throw new Error(data.detail || data.error || 'Server error')
+      if (!Array.isArray(data.tasks)) throw new Error('No tasks returned')
       const merged = mergeTasks(tasks, data.tasks)
       setTasks(merged); setCrawledAt(data.crawledAt)
       saveState(merged, data.crawledAt)
