@@ -3,7 +3,6 @@
     { "source": "/api/:path*", "destination": "/api/:path*" }
   ],
   "functions": {
-    "api/crawl.js": { "maxDuration": 120 },
-    "api/auth.js": { "maxDuration": 10 }
+    "api/crawl.js": { "maxDuration": 120 }
   }
 }
