@@ -49,6 +49,60 @@ async function getSlackData(token) {
   }
 }
 
+
+async function getSupportTickets(token) {
+  try {
+    const SUPPORT_CHANNEL = 'C037YQ0TNJ0'
+    const cutoff = (Date.now()/1000 - 14*86400).toFixed(0)
+    const res = await fetch(
+      `https://slack.com/api/conversations.history?channel=${SUPPORT_CHANNEL}&limit=50&oldest=${cutoff}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const data = await res.json()
+    if (!data.ok) return `Support channel error: ${data.error}`
+
+    // Filter out UptimeRobot and empty Slackbot messages
+    const tickets = (data.messages || []).filter(m => {
+      const txt = (m.text || '').toLowerCase()
+      if (txt.includes('uptimerobot')) return false
+      if (txt.includes('incident started')) return false
+      if (txt.includes('incident resolved')) return false
+      if (txt.includes('downtime alert')) return false
+      if (!m.text || m.text.trim() === '') return false
+      return true
+    })
+
+    // Also fetch thread replies for messages that have them
+    const withThreads = await Promise.all(
+      tickets.slice(0, 20).map(async m => {
+        let replies = []
+        if (m.reply_count > 0) {
+          try {
+            const tr = await fetch(
+              `https://slack.com/api/conversations.replies?channel=${SUPPORT_CHANNEL}&ts=${m.ts}&limit=10`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            const td = await tr.json()
+            replies = (td.messages || []).slice(1).map(r => r.text).filter(Boolean)
+          } catch {}
+        }
+        return {
+          ts: m.ts,
+          text: m.text,
+          user: m.username || m.bot_profile?.name || 'Unknown',
+          replies,
+          replyCount: m.reply_count || 0,
+          channel: 'support',
+        }
+      })
+    )
+
+    return withThreads
+  } catch (err) {
+    return `Support channel error: ${err.message}`
+  }
+}
+
 async function getGmailData(refreshToken, clientId, clientSecret) {
   try {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -113,17 +167,19 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' })
 
-  const [slackData, gmailData, clickupData] = await Promise.all([
+  const [slackData, gmailData, clickupData, supportData] = await Promise.all([
     process.env.SLACK_MCP_TOKEN ? getSlackData(process.env.SLACK_MCP_TOKEN) : 'No Slack token',
     (process.env.GMAIL_REFRESH_TOKEN && process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET)
       ? getGmailData(process.env.GMAIL_REFRESH_TOKEN, process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET)
       : 'No Gmail credentials',
     process.env.CLICKUP_MCP_TOKEN ? getClickUpTasks(process.env.CLICKUP_MCP_TOKEN) : 'No ClickUp token',
+    process.env.SLACK_MCP_TOKEN ? getSupportTickets(process.env.SLACK_MCP_TOKEN) : [],
   ])
 
   console.log('Slack:', Array.isArray(slackData) ? slackData.length : slackData)
   console.log('Gmail:', Array.isArray(gmailData) ? gmailData.length : gmailData)
   console.log('ClickUp:', Array.isArray(clickupData) ? clickupData.length : clickupData)
+  console.log('Support tickets:', Array.isArray(supportData) ? supportData.length : supportData)
 
   const prompt = `You are a task extraction assistant for Rysiu Moscicki, Project Manager at Klingit (web/creative agency).
 
