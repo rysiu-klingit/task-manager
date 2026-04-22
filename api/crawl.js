@@ -239,6 +239,18 @@ export default async function handler(req, res) {
   console.log('ClickUp:', Array.isArray(clickupData) ? clickupData.length : clickupData)
   console.log('Support:', Array.isArray(supportData) ? supportData.length : supportData)
 
+  // Smart truncation — give each source a fair share but cap total to ~150k chars
+  const slackJson = JSON.stringify(Array.isArray(slackData) ? slackData : [])
+  const gmailJson = JSON.stringify(Array.isArray(gmailData) ? gmailData : [])
+  const clickupJson = JSON.stringify(Array.isArray(clickupData) ? clickupData : [])
+  const supportJson = JSON.stringify(Array.isArray(supportData) ? supportData : [])
+
+  // Truncate each to a fair slice — total context ~140k chars
+  const slackTrunc = slackJson.slice(0, 40000)
+  const gmailTrunc = gmailJson.slice(0, 30000)
+  const clickupTrunc = clickupJson.slice(0, 20000)
+  const supportTrunc = supportJson.slice(0, 15000)
+
   const prompt = `You are a task extraction assistant for Rysiu Moscicki, Project Manager at Klingit (web/creative agency).
 
 Extract EVERY actionable item. Be comprehensive — more items is always better than fewer.
@@ -254,10 +266,10 @@ SKIP ONLY:
 - Product marketing newsletters and tool emails (ClickUp product updates, Loom, Slack marketing)
 - Calendar accept/decline automations
 - ClickUp tasks that are internal tool setup (Marker.io widgets, ClickUp setup, template tasks)
-- ClickUp bulk QA image tasks (change image, replace picture) — bulk template tasks
+- ClickUp bulk QA image tasks (change image, replace picture)
 - Any ClickUp task with status complete or closed
 
-Return ONLY a raw JSON array. No markdown, no explanation.
+Return ONLY a raw JSON array. No markdown fences, no explanation, no preamble. Start your response with [ and end with ].
 
 Each item:
 {
@@ -280,16 +292,16 @@ Priority:
 - p4 = Low: FYI, backlog, minor task
 
 ## SLACK (${Array.isArray(slackData) ? slackData.length : 0} messages):
-${JSON.stringify(slackData).slice(0, 12000)}
+${slackTrunc}
 
 ## GMAIL (${Array.isArray(gmailData) ? gmailData.length : 0} emails):
-${JSON.stringify(gmailData).slice(0, 8000)}
+${gmailTrunc}
 
 ## CLICKUP (${Array.isArray(clickupData) ? clickupData.length : 0} tasks):
-${JSON.stringify(clickupData).slice(0, 5000)}
+${clickupTrunc}
 
-## SUPPORT TICKETS from #support channel (${Array.isArray(supportData) ? supportData.length : 0} tickets — treat ALL as actionable):
-${JSON.stringify(supportData).slice(0, 4000)}`
+## SUPPORT TICKETS #support channel (${Array.isArray(supportData) ? supportData.length : 0} tickets — treat ALL as actionable):
+${supportTrunc}`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -305,9 +317,17 @@ ${JSON.stringify(supportData).slice(0, 4000)}`
 
     let tasks
     try {
-      tasks = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim())
-    } catch {
-      return res.status(502).json({ error: 'Invalid JSON', raw: textBlock.text.slice(0, 500) })
+      // Strip markdown fences and find the JSON array
+      let raw = textBlock.text.replace(/```json|```/g, '').trim()
+      // Find the first [ and last ] to extract just the array
+      const start = raw.indexOf('[')
+      const end = raw.lastIndexOf(']')
+      if (start === -1 || end === -1) throw new Error('No JSON array found')
+      raw = raw.slice(start, end + 1)
+      tasks = JSON.parse(raw)
+    } catch (e) {
+      console.error('Parse error:', e.message, 'Raw:', textBlock.text.slice(0, 300))
+      return res.status(502).json({ error: 'Invalid JSON from Claude', detail: e.message, raw: textBlock.text.slice(0, 300) })
     }
 
     return res.status(200).json({ tasks, crawledAt: new Date().toISOString() })
