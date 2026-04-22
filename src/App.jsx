@@ -18,9 +18,10 @@ const SRC = {
   clickup: { label: 'ClickUp', color: '#6b46c1', bg: '#6b46c115' },
 }
 const STATUS_CFG = {
-  open:      { label: 'Open',      color: B.textMuted,  bg: B.pageBg },
-  responded: { label: 'Responded', color: '#2b6cb0',    bg: '#ebf8ff' },
-  done:      { label: 'Done',      color: '#276749',    bg: '#f0fff4' },
+  open:      { label: 'Open',         color: B.textMuted,  bg: B.pageBg },
+  responded: { label: 'Responded',    color: '#2b6cb0',    bg: '#ebf8ff' },
+  done:      { label: 'Done',         color: '#276749',    bg: '#f0fff4' },
+  dismissed: { label: 'Not relevant', color: '#9f7aea',    bg: '#faf5ff' },
 }
 const PRIORITIES = ['p1','p2','p3','p4']
 const SRCS = ['all','slack','gmail','clickup']
@@ -248,8 +249,9 @@ function TaskRow({ task, onSetStatus, onArchive, onUpdate }) {
             <StatusPill status={task.status||'open'} onChange={s => onSetStatus(task.id, s)} />
           </div>
           <div style={{ display:'flex', gap:4, opacity: hov ? 1 : 0, transition:'opacity .15s' }}>
-            <button onClick={() => setEditing(e => !e)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background: editing ? B.cream : B.white, cursor:'pointer', color:B.textMuted }}>✏</button>
-            <button onClick={() => onArchive(task.id)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background:B.white, cursor:'pointer', color:B.textMuted }}>↓</button>
+            <button onClick={() => setEditing(e => !e)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background: editing ? B.cream : B.white, cursor:'pointer', color:B.textMuted }} title="Edit">✏</button>
+            <button onClick={() => onSetStatus(task.id, 'dismissed')} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:'1px solid #e9d8fd', background:'#faf5ff', cursor:'pointer', color:'#9f7aea', fontWeight:600 }} title="Not relevant">✕</button>
+            <button onClick={() => onArchive(task.id)} style={{ fontSize:11, padding:'4px 8px', borderRadius:6, border:`1px solid ${B.border}`, background:B.white, cursor:'pointer', color:B.textMuted }} title="Archive">↓</button>
           </div>
         </div>
       </div>
@@ -344,7 +346,8 @@ export default function App() {
   const q = search.toLowerCase()
   const baseFiltered = tasks.filter(t => {
     if (t.archived) return false
-    if (t.status !== statusTab) return false
+    if (t.status === 'dismissed' && statusTab !== 'dismissed') return false
+    if (statusTab !== 'dismissed' && t.status !== statusTab) return false
     if (priFilter !== 'all' && t.priority !== priFilter) return false
     if (srcFilter !== 'all' && t.source !== srcFilter) return false
     if (devFilter && t.assignee !== devFilter) return false
@@ -367,6 +370,7 @@ export default function App() {
     open: nonArchived.filter(t => t.status === 'open').length,
     responded: nonArchived.filter(t => t.status === 'responded').length,
     done: nonArchived.filter(t => t.status === 'done').length,
+    dismissed: nonArchived.filter(t => t.status === 'dismissed').length,
   }
   const total = filtered.length
   const hasFilters = priFilter !== 'all' || srcFilter !== 'all' || devFilter || clientFilter || search
@@ -517,7 +521,7 @@ export default function App() {
 
           {/* ── STATUS TABS ── */}
           <div style={{ display:'flex', gap:0, marginBottom:18, background:B.white, borderRadius:12, padding:4, border:`1px solid ${B.border}` }}>
-            {['open','responded','done'].map(s => {
+            {['open','responded','done','dismissed'].map(s => {
               const active = statusTab === s
               const cfg = STATUS_CFG[s]
               return (
